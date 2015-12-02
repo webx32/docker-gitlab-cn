@@ -1,7 +1,7 @@
 FROM sameersbn/ubuntu:14.04.20151117
 MAINTAINER sameer@damagehead.com
 
-ENV GITLAB_VERSION=8-2-zh \
+ENV GITLAB_VERSION=8.1.4.zh1 \
     GITLAB_SHELL_VERSION=2.6.8 \
     GITLAB_WORKHORSE_VERSION=0.4.2 \
     GITLAB_USER="git" \
