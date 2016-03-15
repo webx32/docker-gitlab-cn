@@ -1,22 +1,26 @@
 #!/bin/bash
 set -e
 
+GITLAB_CLONE_URL=https://git.coding.net/larryli/gitlab.git
+GITLAB_SHELL_CLONE_URL=https://gitlab.com/gitlab-org/gitlab-shell.git
+GITLAB_WORKHORSE_CLONE_URL=https://gitlab.com/gitlab-org/gitlab-workhorse.git
+
 GEM_CACHE_DIR="${GITLAB_BUILD_DIR}/cache"
 
 BUILD_DEPENDENCIES="gcc g++ make patch pkg-config cmake paxctl \
-  libc6-dev ruby2.1-dev golang-go \
+  libc6-dev ruby2.1-dev \
   libmysqlclient-dev libpq-dev zlib1g-dev libyaml-dev libssl-dev \
   libgdbm-dev libreadline-dev libncurses5-dev libffi-dev \
   libxml2-dev libxslt-dev libcurl4-openssl-dev libicu-dev"
 
 ## Execute a command as GITLAB_USER
 exec_as_git() {
-  sudo -HEu ${GITLAB_USER} "$@"
+  if [[ $(whoami) == ${GITLAB_USER} ]]; then
+    $@
+  else
+    sudo -HEu ${GITLAB_USER} "$@"
+  fi
 }
-
-# ppa for golang1.5
-apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv B0B8B106A0CA2F79FBB616DBA65E2E5D742A38EE
-echo "deb http://ppa.launchpad.net/evarlast/golang1.5/ubuntu trusty main" >> /etc/apt/sources.list
 
 # install build dependencies for gem installation
 apt-get update
@@ -42,24 +46,31 @@ exec_as_git git config --global core.autocrlf input
 
 # install gitlab-shell
 echo "Cloning gitlab-shell v.${GITLAB_SHELL_VERSION}..."
-exec_as_git git clone -q -b v${GITLAB_SHELL_VERSION} --depth 1 \
-  https://github.com/gitlabhq/gitlab-shell.git ${GITLAB_SHELL_INSTALL_DIR}
+exec_as_git git clone -q -b v${GITLAB_SHELL_VERSION} --depth 1 ${GITLAB_SHELL_CLONE_URL} ${GITLAB_SHELL_INSTALL_DIR}
 
 cd ${GITLAB_SHELL_INSTALL_DIR}
 exec_as_git cp -a ${GITLAB_SHELL_INSTALL_DIR}/config.yml.example ${GITLAB_SHELL_INSTALL_DIR}/config.yml
 exec_as_git ./bin/install
 
+# remove unused repositories directory created by gitlab-shell install
+exec_as_git rm -rf ${GITLAB_HOME}/repositories
+
 echo "Cloning gitlab-workhorse v.${GITLAB_WORKHORSE_VERSION}..."
-exec_as_git git clone -q -b ${GITLAB_WORKHORSE_VERSION} --depth 1 \
-  https://gitlab.com/gitlab-org/gitlab-workhorse.git ${GITLAB_WORKHORSE_INSTALL_DIR}
+exec_as_git git clone -q -b ${GITLAB_WORKHORSE_VERSION} --depth 1 ${GITLAB_WORKHORSE_CLONE_URL} ${GITLAB_WORKHORSE_INSTALL_DIR}
+
+echo "Downloading Go ${GOLANG_VERSION}..."
+wget -cnv https://storage.googleapis.com/golang/go${GOLANG_VERSION}.linux-amd64.tar.gz -P ${GITLAB_BUILD_DIR}/
+tar -xf ${GITLAB_BUILD_DIR}/go${GOLANG_VERSION}.linux-amd64.tar.gz -C /tmp/
 
 cd ${GITLAB_WORKHORSE_INSTALL_DIR}
-exec_as_git make
+PATH=/tmp/go/bin:$PATH GOROOT=/tmp/go make install
+
+# remove go
+rm -rf ${GITLAB_BUILD_DIR}/go${GOLANG_VERSION}.linux-amd64.tar.gz /tmp/go
 
 # shallow clone gitlab-ce
 echo "Cloning gitlab-ce v.${GITLAB_VERSION}..."
-exec_as_git git clone -q -b ${GITLAB_VERSION} --depth 1 \
-  https://git.coding.net/larryli/gitlab.git ${GITLAB_INSTALL_DIR}
+exec_as_git git clone -q -b v${GITLAB_VERSION} --depth 1 ${GITLAB_CLONE_URL} ${GITLAB_INSTALL_DIR}
 
 # remove HSTS config from the default headers, we configure it in nginx
 exec_as_git sed -i "/headers\['Strict-Transport-Security'\]/d" ${GITLAB_INSTALL_DIR}/app/controllers/application_controller.rb
@@ -69,19 +80,19 @@ cd ${GITLAB_INSTALL_DIR}
 # install gems, use local cache if available
 if [[ -d ${GEM_CACHE_DIR} ]]; then
   mv ${GEM_CACHE_DIR} ${GITLAB_INSTALL_DIR}/vendor/cache
-  chown -R ${GITLAB_USER}:${GITLAB_USER} ${GITLAB_INSTALL_DIR}/vendor/cache
+  chown -R ${GITLAB_USER}: ${GITLAB_INSTALL_DIR}/vendor/cache
 fi
 exec_as_git bundle install -j$(nproc) --deployment --without development test aws
 
 # make sure everything in ${GITLAB_HOME} is owned by ${GITLAB_USER} user
-chown -R ${GITLAB_USER}:${GITLAB_USER} ${GITLAB_HOME}/
+chown -R ${GITLAB_USER}: ${GITLAB_HOME}
 
 # gitlab.yml and database.yml are required for `assets:precompile`
 exec_as_git cp ${GITLAB_INSTALL_DIR}/config/gitlab.yml.example ${GITLAB_INSTALL_DIR}/config/gitlab.yml
 exec_as_git cp ${GITLAB_INSTALL_DIR}/config/database.yml.mysql ${GITLAB_INSTALL_DIR}/config/database.yml
 
 echo "Compiling assets. Please be patient, this could take a while..."
-exec_as_git bundle exec rake assets:clean assets:precompile >/dev/null 2>&1
+exec_as_git bundle exec rake assets:clean assets:precompile USE_DB=false >/dev/null 2>&1
 
 # remove auto generated ${GITLAB_DATA_DIR}/config/secrets.yml
 rm -rf ${GITLAB_DATA_DIR}/config/secrets.yml
@@ -117,18 +128,22 @@ chmod +x /etc/init.d/gitlab
 rm -rf /etc/nginx/sites-enabled/default
 
 # configure sshd
-sed -i 's|^[#]*UsePAM yes|UsePAM no|' /etc/ssh/sshd_config
-sed -i 's|^[#]*UsePrivilegeSeparation yes|UsePrivilegeSeparation no|' /etc/ssh/sshd_config
-sed -i 's|^[#]*PasswordAuthentication yes|PasswordAuthentication no|' /etc/ssh/sshd_config
-sed -i 's|^[#]*LogLevel INFO|LogLevel VERBOSE|' /etc/ssh/sshd_config
+sed -i \
+  -e "s|^[#]*UsePAM yes|UsePAM no|" \
+  -e "s|^[#]*UsePrivilegeSeparation yes|UsePrivilegeSeparation no|" \
+  -e "s|^[#]*PasswordAuthentication yes|PasswordAuthentication no|" \
+  -e "s|^[#]*LogLevel INFO|LogLevel VERBOSE|" \
+  /etc/ssh/sshd_config
 echo "UseDNS no" >> /etc/ssh/sshd_config
 
 # move supervisord.log file to ${GITLAB_LOG_DIR}/supervisor/
-sed -i 's|^[#]*logfile=.*|logfile='"${GITLAB_LOG_DIR}"'/supervisor/supervisord.log ;|' /etc/supervisor/supervisord.conf
+sed -i "s|^[#]*logfile=.*|logfile=${GITLAB_LOG_DIR}/supervisor/supervisord.log ;|" /etc/supervisor/supervisord.conf
 
 # move nginx logs to ${GITLAB_LOG_DIR}/nginx
-sed -i 's|access_log /var/log/nginx/access.log;|access_log '"${GITLAB_LOG_DIR}"'/nginx/access.log;|' /etc/nginx/nginx.conf
-sed -i 's|error_log /var/log/nginx/error.log;|error_log '"${GITLAB_LOG_DIR}"'/nginx/error.log;|' /etc/nginx/nginx.conf
+sed -i \
+  -e "s|access_log /var/log/nginx/access.log;|access_log ${GITLAB_LOG_DIR}/nginx/access.log;|" \
+  -e "s|error_log /var/log/nginx/error.log;|error_log ${GITLAB_LOG_DIR}/nginx/error.log;|" \
+  /etc/nginx/nginx.conf
 
 # configure supervisord log rotation
 cat > /etc/logrotate.d/supervisord <<EOF
@@ -205,7 +220,7 @@ directory=${GITLAB_INSTALL_DIR}
 environment=HOME=${GITLAB_HOME}
 command=bundle exec sidekiq -c {{SIDEKIQ_CONCURRENCY}}
   -q post_receive
-  -q mailer
+  -q mailers
   -q archive_repo
   -q system_hook
   -q project_web_hook
@@ -231,11 +246,13 @@ cat > /etc/supervisor/conf.d/gitlab-workhorse.conf <<EOF
 priority=20
 directory=${GITLAB_INSTALL_DIR}
 environment=HOME=${GITLAB_HOME}
-command=${GITLAB_WORKHORSE_INSTALL_DIR}/gitlab-workhorse
+command=/usr/local/bin/gitlab-workhorse
   -listenUmask 0
   -listenNetwork unix
   -listenAddr ${GITLAB_INSTALL_DIR}/tmp/sockets/gitlab-workhorse.socket
-  -authBackend http://127.0.0.1:8080
+  -authBackend http://127.0.0.1:8080{{GITLAB_RELATIVE_URL_ROOT}}
+  -authSocket ${GITLAB_INSTALL_DIR}/tmp/sockets/gitlab.socket
+  -documentRoot ${GITLAB_INSTALL_DIR}/public
 user=git
 autostart=true
 autorestart=true
@@ -297,5 +314,5 @@ stderr_logfile=${GITLAB_LOG_DIR}/supervisor/%(program_name)s.log
 EOF
 
 # purge build dependencies and cleanup apt
-apt-get purge -y --auto-remove ${BUILD_DEPENDENCIES}
+DEBIAN_FRONTEND=noninteractive apt-get purge -y --auto-remove ${BUILD_DEPENDENCIES}
 rm -rf /var/lib/apt/lists/*
