@@ -1,9 +1,9 @@
 FROM sameersbn/ubuntu:14.04.20151117
 MAINTAINER sameer@damagehead.com
 
-ENV GITLAB_VERSION=8-3-zh \
-    GITLAB_SHELL_VERSION=2.6.8 \
-    GITLAB_WORKHORSE_VERSION=0.4.2 \
+ENV GITLAB_VERSION=8-5-zh \
+    GITLAB_SHELL_VERSION=2.6.10 \
+    GITLAB_WORKHORSE_VERSION=0.6.5 \
     GITLAB_USER="git" \
     GITLAB_HOME="/home/git" \
     GITLAB_LOG_DIR="/var/log/gitlab" \
