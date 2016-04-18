@@ -2,9 +2,9 @@ FROM sameersbn/ubuntu:14.04.20160308
 MAINTAINER sameer@damagehead.com
 
 ENV GITLAB_VERSION=8-6-zh \
-    GITLAB_SHELL_VERSION=2.6.10 \
-    GITLAB_WORKHORSE_VERSION=0.6.5 \
-    GOLANG_VERSION=1.5.3 \
+    GITLAB_SHELL_VERSION=2.7.2 \
+    GITLAB_WORKHORSE_VERSION=0.7.2 \
+    GOLANG_VERSION=1.6.1 \
     GITLAB_USER="git" \
     GITLAB_HOME="/home/git" \
     GITLAB_LOG_DIR="/var/log/gitlab" \

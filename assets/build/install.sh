@@ -59,7 +59,7 @@ echo "Cloning gitlab-workhorse v.${GITLAB_WORKHORSE_VERSION}..."
 exec_as_git git clone -q -b ${GITLAB_WORKHORSE_VERSION} --depth 1 ${GITLAB_WORKHORSE_CLONE_URL} ${GITLAB_WORKHORSE_INSTALL_DIR}
 
 echo "Downloading Go ${GOLANG_VERSION}..."
-wget -cnv https://storage.googleapis.com/golang/go${GOLANG_VERSION}.linux-amd64.tar.gz -P ${GITLAB_BUILD_DIR}/
+wget -cnv http://www.golangtc.com/static/go/${GOLANG_VERSION}/go${GOLANG_VERSION}.linux-amd64.tar.gz -P ${GITLAB_BUILD_DIR}/
 tar -xf ${GITLAB_BUILD_DIR}/go${GOLANG_VERSION}.linux-amd64.tar.gz -C /tmp/
 
 cd ${GITLAB_WORKHORSE_INSTALL_DIR}
