@@ -57,7 +57,7 @@ exec_as_git ./bin/install
 exec_as_git rm -rf ${GITLAB_HOME}/repositories
 
 echo "Cloning gitlab-workhorse v.${GITLAB_WORKHORSE_VERSION}..."
-exec_as_git git clone ${GITLAB_WORKHORSE_VERSION}  ${GITLAB_WORKHORSE_CLONE_URL} ${GITLAB_WORKHORSE_INSTALL_DIR}
+exec_as_git git clone  ${GITLAB_WORKHORSE_CLONE_URL} ${GITLAB_WORKHORSE_INSTALL_DIR}
 
 echo "Downloading Go ${GOLANG_VERSION}..."
 wget -cnv http://www.golangtc.com/static/go/${GOLANG_VERSION}/go${GOLANG_VERSION}.linux-amd64.tar.gz -P ${GITLAB_BUILD_DIR}/
